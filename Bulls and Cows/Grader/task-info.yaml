@@ -1,0 +1,429 @@
+type: edu
+files:
+- name: src/bullscows/Main.java
+  visible: true
+  text: |
+    package bullscows;
+
+    public class Main {
+        public static void main(String[] args) {
+            System.out.println("Hello World!");
+        }
+    }
+  learner_created: false
+- name: test/BullsCowsTest.java
+  visible: false
+  text: |
+    import bullscows.Main;
+    import org.hyperskill.hstest.stage.StageTest;
+    import org.hyperskill.hstest.testcase.CheckResult;
+    import org.hyperskill.hstest.testcase.TestCase;
+    import org.hyperskill.hstest.testing.TestedProgram;
+
+    import java.util.Arrays;
+    import java.util.List;
+    import java.util.regex.Matcher;
+    import java.util.regex.Pattern;
+    import java.util.stream.Collectors;
+
+    public class BullsCowsTest extends StageTest<String> {
+
+        @Override
+        public List<TestCase<String>> generate() {
+            return Arrays.asList(
+                    new TestCase<String>().setDynamicTesting(this::test1),
+                    new TestCase<String>().setDynamicTesting(this::test2),
+                    new TestCase<String>().setDynamicTesting(this::test3));
+        }
+
+        String secretNumber;
+
+        // base test
+        CheckResult test1() {
+            TestedProgram main = new TestedProgram(Main.class);
+            main.start();
+            String input = "3601";
+            String output = main.execute(input);
+            return solver(input, output);
+        }
+
+        // test with 4 bulls
+        CheckResult test2() {
+            TestedProgram main = new TestedProgram(Main.class);
+            main.start();
+            String output = main.execute(secretNumber);
+
+            return solver(secretNumber, output);
+        }
+
+        // test of None result
+        CheckResult test3() {
+            TestedProgram main = new TestedProgram(Main.class);
+            main.start();
+            List<Integer> source = stringToArrayOfNumbers("1234567890");
+            List<Integer> secretNumberList = stringToArrayOfNumbers(secretNumber);
+            source.removeAll(secretNumberList);
+            String input = source.stream().map(String::valueOf).collect(Collectors.joining()).substring(0, 4);
+            String output = main.execute(input);
+            return solver(input, output);
+        }
+
+        CheckResult solver(String input, String output) {
+
+            if (!findPairsOfBullsAndCows(output)) {
+                return CheckResult.wrong(
+                        "The testing system didn't find a pairs of " +
+                                "bulls and cows or None in your program's output.");
+            }
+
+            Matcher matcher = getFourDigitsMatcher(output);
+            if (!findFourDigitsWithRegExp(matcher)) {
+                return CheckResult.wrong(
+                        "The testing system didn't find a \"secret\" " +
+                                "number in your program's output.");
+            }
+
+            secretNumber = getFourDigits(matcher);
+            if (secretNumber.equals("9305")) {
+                System.out.println("Why 9305? Make your own secret number :)");
+            }
+
+            int[] correctAnswer = grader(input, secretNumber);
+            int[] receivedAnswers = getNumOfBullsAndCows(output);
+
+            if (correctAnswer[0] != receivedAnswers[0]) {
+                return CheckResult.wrong("The number of Bulls is incorrect.");
+            }
+
+            if (correctAnswer[1] != receivedAnswers[1]) {
+                return CheckResult.wrong("The number of Cows is incorrect.");
+            }
+
+            return CheckResult.correct();
+        }
+
+        Matcher getFourDigitsMatcher(String userString) {
+            Pattern fourDigitsPattern = Pattern.compile("\\b\\d{4}\\b");
+            return fourDigitsPattern.matcher(userString);
+        }
+
+        boolean findFourDigitsWithRegExp(Matcher matcher) {
+            return matcher.find();
+        }
+
+        String getFourDigits(Matcher matcher) {
+            return matcher.group();
+        }
+
+        boolean findPairsOfBullsAndCows(String userString) {
+            Pattern pairPattern = Pattern.compile("(\\b\\d ([cC]ow|[bB]ull))|[nN]one\\b");
+            Matcher pairMatcher = pairPattern.matcher(userString);
+            return pairMatcher.find();
+        }
+
+
+        // get number of bulls and cows from user program's output
+        int[] getNumOfBullsAndCows(String userString) {
+            Matcher nonePattern = Pattern.compile("\\b[nN]one\\b").matcher(userString);
+            Matcher cowsPattern = Pattern.compile("\\b\\d [cC]ow").matcher(userString);
+            Matcher bullsPattern = Pattern.compile("\\b\\d [bB]ull").matcher(userString);
+            Pattern oneNumPattern = Pattern.compile("\\d");
+
+            if (nonePattern.find()) {
+                return new int[]{0, 0};
+            }
+
+            int[] ans = {0, 0};
+
+            if (bullsPattern.find()) {
+                String temp = bullsPattern.group();
+                Matcher oneNumBulls = oneNumPattern.matcher(temp);
+                oneNumBulls.find();
+                ans[0] = Integer.parseInt(oneNumBulls.group());
+            }
+            if (cowsPattern.find()) {
+                String temp = cowsPattern.group();
+                Matcher oneNumCows = oneNumPattern.matcher(temp);
+                oneNumCows.find();
+                ans[1] = Integer.parseInt(oneNumCows.group());
+            }
+
+            return ans;
+        }
+
+        // reference grader
+        int[] grader(String grade, String guess) {
+            int bulls = 0;
+            List<Integer> gradeNumbers = stringToArrayOfNumbers(grade);
+            List<Integer> guessNumbers = stringToArrayOfNumbers(guess);
+
+            for (int i = 0; i < gradeNumbers.size(); i++) {
+                if (gradeNumbers.get(i).equals(guessNumbers.get(i))) {
+                    bulls++;
+                }
+            }
+
+            gradeNumbers.retainAll(guessNumbers);
+            int cows = gradeNumbers.size() - bulls;
+
+            return new int[]{bulls, cows};
+        }
+
+
+        private static List<Integer> stringToArrayOfNumbers(String array) {
+            return Arrays.stream(array.split(""))
+                    .map(Integer::parseInt)
+                    .collect(Collectors.toList());
+        }
+    }
+  learner_created: false
+- name: src/bullscows/GameController.java
+  visible: true
+  text: |
+    package bullscows;
+
+    import java.util.*;
+    import java.util.stream.Collectors;
+    import java.util.stream.IntStream;
+
+    public class GameController {
+
+        private final int numDigits;
+        private final int secretCode;
+        private final Random random = new Random();
+        private boolean gameWon = false;
+        private final List<GameTurn> turns = new ArrayList<>();
+
+        public GameController(int numDigits) {
+            this.numDigits = numDigits;
+            this.secretCode = getNumberWithDistinctDigits();
+        }
+
+        private void buildNumber(int randomNumber, List<Integer> list, StringBuilder builder) {
+            Integer value = list.get(randomNumber);
+            builder.append(value);
+            list.remove(value);
+        }
+
+        private int getNumberWithDistinctDigits() {
+            final List<Integer> list = IntStream.rangeClosed(0, 9)
+                        .mapToObj(num->num)
+                        .collect(Collectors.toList());
+            StringBuilder builder = new StringBuilder();
+            int randomNumber = random.nextInt(list.size()-1)+1;
+            buildNumber(randomNumber, list, builder);
+            IntStream.rangeClosed(1, numDigits-1)
+                    .forEach(num-> {
+                        int listNumber = random.nextInt(list.size());
+                        buildNumber(listNumber, list, builder);
+                    });
+            return Integer.valueOf(builder.toString());
+        }
+
+        private void displayIntroduction() {
+            System.out.printf("The secret code is prepared: ");
+            IntStream.rangeClosed(0, numDigits-1).forEach(n-> System.out.print("*"));
+            System.out.println(".\n");
+        }
+
+        public void startPredefinedGame() {
+            List<Integer> guesses = new ArrayList<>();
+            int randomValue = random.nextInt(9)+1;
+            while(randomValue > 0) {
+                int guess = getNumberWithDistinctDigits();
+                if (guess != secretCode) {
+                    guesses.add(guess);
+                    randomValue--;
+                }
+            }
+            guesses.add(secretCode);
+            int numTurns = 0, index = 0;
+            displayIntroduction();
+            while(numTurns < guesses.size()) {
+                GameTurn turn = new GameTurn(++index, guesses.get(numTurns));
+                turn.playTurn();
+                evaluateTurn(turn);
+                turn.displayGrade();
+                numTurns++;
+            }
+            if(gameWon)
+                System.out.printf("Congrats! The secret code is %d.%n",secretCode);
+
+        }
+
+        public void gradeOneRound() {
+            Scanner scanner = new Scanner(System.in);
+            GameTurn turn = new GameTurn(0, scanner);
+            turn.playTurn();
+            if(verifyTurn(turn)) {
+                evaluateTurn(turn);
+                System.out.print("Grade: ");
+                turn.displayGrade();
+
+                System.out.printf("%s The secret code is %d.", turn.getGradeString(), secretCode);
+            }
+        }
+
+        public void startGame() {
+            displayIntroduction();
+            Scanner scanner = new Scanner(System.in);
+            int index = 0;
+            while(gameWon == false) {
+                GameTurn turn = new GameTurn(++index, scanner);
+                turns.add(turn);
+                turn.playTurn();
+                if(verifyTurn(turn)) {
+                    evaluateTurn(turn);
+                    turn.displayGrade();
+                }
+            }
+            if(gameWon)
+                System.out.printf("Congrats! The secret code is %d.%n",secretCode);
+        }
+
+        private boolean verifyTurn(GameTurn turn) {
+            int guess = turn.getGuessValue();
+            if(String.valueOf(guess).length() != numDigits) {
+                System.out.printf("The guess should be %d digits long%n", numDigits);
+                return false;
+            }
+            if(String.valueOf(guess).chars().mapToObj(o->o).collect(Collectors.toSet()).size() != numDigits) {
+                System.out.printf("The guess should have %d distinct digits. No repetitions in the secret code.%n", numDigits);
+                return false;
+            }
+            return true;
+        }
+
+        private void evaluateTurn(GameTurn turn) {
+            setBulls(turn);
+            setCows(turn);
+            updateGameStatus(turn);
+        }
+
+        private void setBulls(GameTurn turn) {
+            final String actual = String.valueOf(secretCode);
+            final String guess = String.valueOf(turn.getGuessValue());
+
+            turn.setBulls((int)IntStream.rangeClosed(0, actual.length()-1)
+                    .filter(n->actual.charAt(n) == guess.charAt(n)).count());
+        }
+
+        private void setCows(GameTurn turn) {
+            final String actual = String.valueOf(secretCode);
+            final String guess = String.valueOf(turn.getGuessValue());
+
+            int cows = (int)guess.chars()
+                    .filter(num->actual.contains((CharSequence)String.valueOf((char)num)))
+                    .count();
+            turn.setCows(cows-turn.getBulls());
+        }
+
+        private void updateGameStatus(GameTurn turn) {
+            if(turn.getBulls() == numDigits) {
+                gameWon = true;
+            }
+        }
+
+
+    }
+  learner_created: true
+- name: src/bullscows/GameTurn.java
+  visible: true
+  text: |
+    package bullscows;
+
+    import java.util.Scanner;
+
+    public class GameTurn {
+
+        private int index;
+        private Scanner scanner;
+        private int guessValue;
+        private int bulls;
+        private int cows;
+        private String gradeString;
+
+
+
+        public GameTurn(int index, Scanner scanner) {
+            this.index = index;
+            this.scanner = scanner;
+        }
+
+        public GameTurn(int index, int guessValue) {
+            this.index = index;
+            this.guessValue = guessValue;
+        }
+
+
+
+        public void playTurn() {
+            if(index != 0)
+                System.out.printf("Turn %d. Answer:%n", index);
+            if(this.guessValue == 0)
+                this.guessValue = scanner.nextInt();
+            else
+                System.out.println(guessValue);
+        }
+
+
+        public int getGuessValue() {
+            return this.guessValue;
+        }
+
+        public void displayGrade() {
+            if(bulls == 0 && cows == 0)
+                gradeString = "None.";
+            else if(bulls > 0 && cows == 0){
+                gradeString = getGradeString(bulls, "bull")+".";
+            } else if(cows > 0 && bulls == 0) {
+                gradeString = getGradeString(cows, "cow")+".";
+            } else {
+                gradeString =
+                        getGradeString(bulls, "bull")
+                                + " and " +
+                    getGradeString(cows, "cow") + ".";
+            }
+            if(index != 0)
+                System.out.println(gradeString);
+
+        }
+
+        private String getGradeString(int value, String type) {
+            if(value == 1)
+                return "1 "+type+"(s)";
+            else
+                return value + " " + type + "(s)";
+
+        }
+
+
+
+        public void setBulls(int bulls) {
+            this.bulls = bulls;
+        }
+
+        public void setCows(int cows) {
+            this.cows = cows;
+        }
+
+        public int getBulls() {
+            return bulls;
+        }
+
+        public int getCows() {
+            return cows;
+        }
+
+        public String getGradeString() {
+            return gradeString;
+        }
+    }
+  learner_created: true
+feedback_link: https://hyperskill.org/projects/53/stages/288/implement
+status: Solved
+feedback:
+  message: Congratulations! Continue on <a href="https://hyperskill.org/projects/53/stages/288/implement">JetBrains
+    Academy</a>
+  time: Sat, 10 Oct 2020 15:33:44 UTC
+record: 2
